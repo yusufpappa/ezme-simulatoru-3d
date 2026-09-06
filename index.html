@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>💥 Ezme Simülatörü 3D</title>
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#0b0f16;
+    font-family:"Segoe UI", system-ui, sans-serif; user-select:none; }
+  canvas { display:block; touch-action:none; }
+  .vig { position:fixed; inset:0; pointer-events:none; z-index:2;
+    background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,10,.4) 100%); }
+  #title { position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:6;
+    font-size:clamp(16px,3vw,27px); font-weight:900; letter-spacing:1px; white-space:nowrap;
+    background:linear-gradient(90deg,#ff5252,#ffd740,#ff5252); -webkit-background-clip:text;
+    background-clip:text; color:transparent; filter:drop-shadow(0 2px 6px rgba(0,0,0,.6)); }
+  #stats { position:fixed; top:10px; right:10px; z-index:6; display:flex; flex-direction:column; gap:5px; }
+  .chip { background:rgba(13,18,28,.82); backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,.14);
+    border-radius:12px; padding:6px 12px; color:#9fb2c8; font-size:12px; font-weight:700;
+    box-shadow:0 4px 14px rgba(0,0,0,.35); min-width:180px; }
+  .chip b { color:#fff; font-size:15px; float:right; }
+  .bar { height:7px; background:rgba(255,255,255,.14); border-radius:4px; margin-top:5px; overflow:hidden; }
+  #dmgFill { height:100%; width:0%; border-radius:4px; background:linear-gradient(90deg,#ffd740,#ff5252);
+    transition:width .12s; }
+  #banner { position:fixed; top:30%; left:50%; transform:translate(-50%,-50%) scale(.6); z-index:8;
+    font-size:clamp(28px,6vw,64px); font-weight:900; color:#ffd740; white-space:nowrap; opacity:0;
+    text-shadow:0 4px 0 #b8860b, 0 8px 24px rgba(0,0,0,.7); pointer-events:none; transition:all .25s; }
+  #banner.show { opacity:1; transform:translate(-50%,-50%) scale(1); }
+  #hint { position:fixed; bottom:118px; left:50%; transform:translateX(-50%); z-index:5; color:#cfe0f5;
+    font-size:12px; background:rgba(10,14,22,.65); padding:5px 12px; border-radius:10px;
+    transition:opacity 1s; white-space:nowrap; }
+  #panel { position:fixed; bottom:0; left:0; right:0; z-index:7; padding:8px 10px 10px;
+    background:linear-gradient(180deg, rgba(10,14,22,.0), rgba(10,14,22,.92) 40%);
+    display:flex; flex-direction:column; gap:6px; }
+  .row { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; align-items:stretch; }
+  .rowLabel { color:#7f93ab; font-size:10px; font-weight:800; letter-spacing:1.5px; text-align:center; margin-top:2px; }
+  button { cursor:pointer; border:1px solid rgba(255,255,255,.16); border-radius:12px;
+    background:rgba(30,40,58,.85); color:#e8f0fb; padding:7px 10px; font-size:12.5px; font-weight:800;
+    font-family:inherit; transition:transform .08s, box-shadow .15s, background .15s; line-height:1.25; }
+  button:hover { background:rgba(48,64,92,.95); transform:translateY(-1px); }
+  button:active { transform:scale(.94); }
+  button.sel { background:linear-gradient(180deg,#3d6fd6,#2b4fa0); border-color:#7aa5ff;
+    box-shadow:0 0 0 2px rgba(122,165,255,.35), 0 4px 14px rgba(43,79,160,.6); }
+  button small { display:block; font-size:10px; font-weight:700; color:#9fb2c8; }
+  button.sel small { color:#cfe0ff; }
+  #dropBtn { background:linear-gradient(180deg,#ff5f5f,#c62828); border-color:#ff9d9d; color:#fff;
+    font-size:17px; padding:8px 26px; box-shadow:0 6px 18px rgba(198,40,40,.5); }
+  #dropBtn:hover { background:linear-gradient(180deg,#ff7676,#d32f2f); }
+  #clearBtn { background:rgba(56,64,74,.9); font-size:12px; }
+
+  /* ---------- GEZEGEN PANELI (SOL) ---------- */
+  #planetPanel { position:fixed; left:10px; top:50%; transform:translateY(-50%); z-index:6;
+    display:flex; flex-direction:column; gap:4px; max-height:78vh; overflow-y:auto;
+    background:rgba(10,14,22,.72); backdrop-filter:blur(8px);
+    border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:8px; width:118px;
+    scrollbar-width:thin; box-shadow:0 4px 18px rgba(0,0,0,.35); }
+  .pLabel { color:#7f93ab; font-size:9px; font-weight:800; letter-spacing:1.3px; text-align:center; }
+  #curG { color:#ffd740; font-size:10px; font-weight:800; text-align:center; margin:2px 0 4px; }
+  .pbtn { cursor:pointer; border:1px solid rgba(255,255,255,.14); border-radius:10px;
+    background:rgba(30,40,58,.85); color:#e8f0fb; padding:5px 6px; font-size:11.5px;
+    font-weight:700; font-family:inherit; text-align:left; line-height:1.3;
+    transition:transform .08s, background .15s; display:flex; align-items:center; gap:6px; }
+  .pbtn:hover { background:rgba(48,64,92,.95); transform:translateX(2px); }
+  .pbtn:active { transform:scale(.95); }
+  .pbtn.sel { background:linear-gradient(90deg,#7b4fd6,#4a2f9e); border-color:#b39dff;
+    box-shadow:0 0 0 2px rgba(179,157,255,.3), 0 4px 12px rgba(74,47,158,.5); }
+  .pbtn .psym { font-size:15px; flex-shrink:0; }
+  .pbtn .pinfo { display:flex; flex-direction:column; }
+  .pbtn .pg { font-size:9px; color:#9fb2c8; font-weight:700; }
+  .pbtn.sel .pg { color:#ddd0ff; }
+</style>
+</head>
+<body>
+<div class="vig"></div>
+<div id="title">💥 EZME SİMÜLATÖRÜ 3D 💥</div>
+<div id="stats">
+  <div class="chip">Ezme Puanı <b id="scoreV">0</b></div>
+  <div class="chip">Ezilen Cisim <b id="crushV">0 / 4</b></div>
+  <div class="chip">Hedef Sağlamlığı <b id="hpV">%100</b>
+    <div class="bar"><div id="dmgFill"></div></div>
+  </div>
+</div>
+<div id="banner"></div>
+<div id="planetPanel">
+  <div class="pLabel">GEZEGEN SEÇ</div>
+  <div id="curG">9.81 m/s²</div>
+  <div id="planetList" style="display:flex;flex-direction:column;gap:4px"></div>
+</div>
+<div id="hint">🖱️ Sürükle: döndür • Tekerlek: yakınlaş • Cisim SABİT durur — gülleyi üstüne bırak ve ez!</div>
+<div id="panel">
+  <div class="rowLabel">EZİLECEK CİSMİ SEÇ</div>
+  <div class="row" id="objRow"></div>
+  <div class="rowLabel" style="margin-top:4px">EZME GÜLLESİ SEÇ (üstteki bölmeden düşer)</div>
+  <div class="row" id="ballRow" style="margin-bottom:4px"></div>
+  <div class="row">
+    <button id="dropBtn">⬇️ BIRAK! <small>(boşluk tuşu)</small></button>
+    <button id="clearBtn">🧹 Temizle <small>(R tuşu)</small></button>
+  </div>
+</div>
+
+<!-- ================= KUTUPHANELER ================= -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+
+<script>
+"use strict";
+/* ================= SABITLER ================= */
+const BALLS = [
+  { id:"t10",  name:"Küçük Taş",  kg:10,  r:0.24, color:0x8d99ae },
+  { id:"g30",  name:"Gülle",      kg:30,  r:0.32, color:0x2f3640 },
+  { id:"g100", name:"Gülle",      kg:100, r:0.46, color:0x1e272e },
+  { id:"g200", name:"Gülle",      kg:200, r:0.58, color:0x12181f },
+  { id:"g500", name:"Gülle",      kg:500, r:0.76, color:0x0b0f13 },
+];
+const OBJS = [
+  { id:"car",   name:"Araba",        hp:1800, scale:1.0 },
+  { id:"tv",    name:"Televizyon",   hp:450,  scale:1.0 },
+  { id:"ballon",name:"Hava Topu",    hp:300,  scale:1.0 },
+  { id:"safe",  name:"Para Kasası",  hp:3200, scale:1.0 },
+];
+const G = 9.82, DROP_H = 7.2;
+
+/* ================= GEZEGENLER ================= */
+const PLANETS = [
+  { id:"mercury", sym:"🌑", name:"Merkür",   g:3.70 },
+  { id:"venus",   sym:"🌕", name:"Venüs",    g:8.87 },
+  { id:"earth",   sym:"🌍", name:"Dünya",    g:9.81 },
+  { id:"mars",    sym:"🔴", name:"Mars",     g:3.71 },
+  { id:"jupiter", sym:"🟠", name:"Jüpiter",  g:24.79 },
+  { id:"saturn",  sym:"🪐", name:"Satürn",   g:10.44 },
+  { id:"uranus",  sym:"🔵", name:"Uranüs",   g:8.69 },
+  { id:"neptune", sym:"🔷", name:"Neptün",   g:11.15 },
+];
+let currentPlanet = "earth";
+
+/* ================= SENDER ================= */
+let scene, camera, renderer, world;
+let camTheta = Math.PI/4, camPhi = 0.95, camDist = 11, camTarget = new THREE.Vector3(0,1,0);
+let ballBodies = [], ballMeshes = [], targetGroup = null;
+let selectedObj = "car", selectedBall = "g100";
+let score = 0, crushedCount = 0, targetHP = 1800, targetMaxHP = 1800;
+let cageParts = [], debris = [], coins = [];
+let dropCount = 0;
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b0f16);
+  scene.fog = new THREE.Fog(0x0b0f16, 18, 46);
+  camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 200);
+
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+
+  // isiklar
+  scene.add(new THREE.HemisphereLight(0x88aaff, 0x223044, 0.75));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  sun.position.set(8, 14, 6);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -16; sun.shadow.camera.right = 16;
+  sun.shadow.camera.top = 16;  sun.shadow.camera.bottom = -16;
+  sun.shadow.camera.far = 60;
+  scene.add(sun);
+  const rim = new THREE.DirectionalLight(0x6fa8ff, 0.5);
+  rim.position.set(-10, 8, -8);
+  scene.add(rim);
+  window.sunLight = sun;
+
+  // fizik dunyasi
+  world = new CANNON.World();
+  const earthDef = PLANETS.find(p => p.id === currentPlanet);
+  world.gravity.set(0, -earthDef.g, 0);
+  world.broadphase = new CANNON.SAPBroadphase();
+  world.allowSleep = true;
+
+  buildGround();
+  buildDropZone();   // ustte bolme + kilavuz raylar
+  buildArenaWalls(); // arena siniri (cikislar engellenir)
+  buildUI();
+  makeTarget(selectedObj);
+
+  addEventListener("resize", onResize);
+  addEventListener("keydown", e => {
+    if (e.code === "Space") { e.preventDefault(); dropBall(); }
+    if (e.code === "KeyR") clearAll();
+  });
+  requestAnimationFrame(loop);
+}
+
+/* ================= ZEMIN ================= */
+function buildGround() {
+  const mat = new CANNON.Material("ground");
+  const gm = new THREE.Mesh(
+    new THREE.CylinderGeometry(30, 30, 0.6, 48),
+    new THREE.MeshStandardMaterial({ color:0x2a3442, roughness:.92, metalness:.05 })
+  );
+  gm.position.y = -0.3;
+  gm.receiveShadow = true;
+  scene.add(gm);
+
+  const mark = new THREE.Mesh(
+    new THREE.RingGeometry(2.4, 2.6, 48),
+    new THREE.MeshBasicMaterial({ color:0xffd740, transparent:true, opacity:.28, side:THREE.DoubleSide })
+  );
+  mark.rotation.x = -Math.PI/2;
+  mark.position.y = 0.012;
+  scene.add(mark);
+
+  // grid yardimcisi
+  const grid = new THREE.GridHelper(60, 60, 0x3a4a60, 0x1c2634);
+  grid.position.y = 0.005;
+  scene.add(grid);
+
+  const gBody = new CANNON.Body({ mass:0 });
+  gBody.addShape(new CANNON.Plane());
+  gBody.quaternion.setFromEuler(-Math.PI/2, 0, 0);
+  world.addBody(gBody);
+}
+
+/* ================= UST BOLME ================= */
+function buildDropZone() {
+  const grp = new THREE.Group();
+  const steel = new THREE.MeshStandardMaterial({ color:0x8a97a8, metalness:.85, roughness:.35 });
+  const dark  = new THREE.MeshStandardMaterial({ color:0x39434f, metalness:.6,  roughness:.5 });
+
+  // taban: ortasi bos cerceve (gulle delikten duser)
+  const fw = 1.45, fl = 4.6;
+  [[-(fl/2-fw/2),0,fw,fl],[fl/2-fw/2,0,fw,fl],[0,-(fl/2-fw/2),fl-2*fw,fw],[0,fl/2-fw/2,fl-2*fw,fw]]
+  .forEach(p => {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(p[2], 0.3, p[3]), dark);
+    f.position.set(p[0], DROP_H + 1.6, p[1]);
+    f.castShadow = f.receiveShadow = true;
+    grp.add(f);
+  });
+
+  // yan duvarlar
+  const wallMat = steel.clone();
+  wallMat.transparent = true; wallMat.opacity = .55;
+  [-2.15, 2.15].forEach(x => {
+    const w = new THREE.Mesh(new THREE.BoxGeometry(0.25, 2.4, 4.6), wallMat);
+    w.position.set(x, DROP_H + 2.75, 0);
+    w.castShadow = true;
+    grp.add(w);
+  });
+  [ -2.15, 2.15].forEach(z => {
+    const w = new THREE.Mesh(new THREE.BoxGeometry(4.6, 2.4, 0.25), wallMat);
+    w.position.set(0, DROP_H + 2.75, z);
+    w.castShadow = true;
+    grp.add(w);
+  });
+
+  // kizak raylari (yandan inen)
+  const railMat = new THREE.MeshStandardMaterial({ color:0xffb300, metalness:.7, roughness:.3 });
+  [-1.0, 1.0].forEach(x => {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.09, DROP_H + 1.4, 0.09), railMat);
+    rail.position.set(x, (DROP_H + 1.4)/2 + 0.2, 0);
+    rail.castShadow = true;
+    grp.add(rail);
+  });
+
+  // tepe ustasi yazisi
+  const warn = new THREE.Mesh(
+    new THREE.BoxGeometry(2.6, 0.34, 0.06),
+    new THREE.MeshStandardMaterial({ color:0xffc400, emissive:0x332900 })
+  );
+  warn.position.set(0, DROP_H + 4.15, 2.2);
+  grp.add(warn);
+
+  grp.traverse(o => { if (o.isMesh) o.receiveShadow = true; });
+  scene.add(grp);
+
+  // fizik duvarlari (gulle asagi kayarken kenardan cikmasin)
+  const pm = new CANNON.Material("cage");
+  const mk = (x, z, sx, sz) => {
+    const b = new CANNON.Body({ mass:0 });
+    b.addShape(new CANNON.Box(new CANNON.Vec3(sx/2, 1.2, sz/2)));
+    b.position.set(x, DROP_H + 2.75, z);
+    world.addBody(b);
+  };
+  mk(-2.15, 0, 0.25, 4.6); mk(2.15, 0, 0.25, 4.6);
+  mk(0, -2.15, 4.6, 0.25); mk(0, 2.15, 4.6, 0.25);
+  // taban (gulle yukari cikmasin)
+  const topLid = new CANNON.Body({ mass:0 });
+  topLid.addShape(new CANNON.Box(new CANNON.Vec3(2.3, 0.15, 2.3)));
+  topLid.position.set(0, DROP_H + 4.15, 0);
+  world.addBody(topLid);
+  cageParts.push(topLid);
+}
+
+/* ================= ARENA SINIRI ================= */
+function buildArenaWalls() {
+  const R = 6.2, N = 8;
+  const side = 2 * R * Math.tan(Math.PI / N) + 0.35;
+  const glass = new THREE.MeshStandardMaterial({ color:0x7ec8ff, transparent:true, opacity:.1,
+    roughness:.15, metalness:.2, side:THREE.DoubleSide, depthWrite:false });
+  const edgeMat = new THREE.MeshStandardMaterial({ color:0x40c4ff, emissive:0x1a7fb8,
+    roughness:.4, metalness:.6 });
+  for (let i = 0; i < N; i++) {
+    const a = i / N * Math.PI * 2 + Math.PI / N;
+    const x = Math.sin(a) * R, z = Math.cos(a) * R;
+    // gorunur cam panel
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(side, 1.7, 0.08), glass);
+    panel.position.set(x, 0.85, z);
+    panel.rotation.y = a;
+    scene.add(panel);
+    // parlak ust kenar cizgisi
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(side, 0.07, 0.12), edgeMat);
+    edge.position.set(x, 1.72, z);
+    edge.rotation.y = a;
+    scene.add(edge);
+    // gorunmez yuksek fizik duvari (yukaridan ziplayanlar da icerde kalir)
+    const b = new CANNON.Body({ mass:0 });
+    b.addShape(new CANNON.Box(new CANNON.Vec3(side/2, 8, 0.18)));
+    b.position.set(x, 8, z);
+    b.quaternion.setFromEuler(0, a, 0);
+    world.addBody(b);
+  }
+}
+
+/* ================= HEDEF CISIM MODELLERI ================= */
+function stdMat(c, rough=.6, metal=.2) {
+  return new THREE.MeshStandardMaterial({ color:c, roughness:rough, metalness:metal });
+}
+
+function makeCar(g) {
+  const paint = stdMat(0xd63031, .3, .65);
+  const paintDark = stdMat(0xa61b1c, .35, .6);
+  const glass = new THREE.MeshStandardMaterial({ color:0x9fc5ff, roughness:.06, metalness:.35,
+    transparent:true, opacity:.62 });
+  const chrome = stdMat(0xd8dde3, .18, .95);
+  const rubber = stdMat(0x14181e, .95, .05);
+  const rimMat = stdMat(0xc9ced6, .25, .9);
+
+  // -- saşe ve kasa (katmanlı) --
+  const lower = new THREE.Mesh(new THREE.BoxGeometry(2.7, .3, 1.3), paintDark);
+  lower.position.y = .3; g.add(lower);
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(2.7, .3, 1.28), paint);
+  hood.position.y = .58; g.add(hood);
+  // burun eğimi
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(.45, .2, 1.24), paint);
+  nose.position.set(-1.15, .5, 0); g.add(nose);
+  const bumperF = new THREE.Mesh(new THREE.BoxGeometry(.16, .22, 1.34), stdMat(0x22262c,.7,.3));
+  bumperF.position.set(-1.38, .38, 0); g.add(bumperF);
+  const bumperR = new THREE.Mesh(new THREE.BoxGeometry(.16, .22, 1.34), stdMat(0x22262c,.7,.3));
+  bumperR.position.set(1.38, .38, 0); g.add(bumperR);
+
+  // -- kabin (camlı) --
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, .5, 1.14), paint);
+  cabin.position.set(.15, .98, 0); g.add(cabin);
+  // on cam
+  const wsGeo = new THREE.BoxGeometry(.06, .46, 1.06);
+  const ws = new THREE.Mesh(wsGeo, glass);
+  ws.rotation.z = .38; ws.position.set(-.52, 1.03, 0); g.add(ws);
+  // arka cam
+  const rw = new THREE.Mesh(wsGeo, glass);
+  rw.rotation.z = -.3; rw.position.set(.86, 1.02, 0); g.add(rw);
+  // yan camlar
+  [.56, -.56].forEach(z => {
+    const sw = new THREE.Mesh(new THREE.BoxGeometry(1.34, .34, .05), glass);
+    sw.position.set(.16, 1.06, z); g.add(sw);
+  });
+  // tavan
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.42, .07, 1.16), paint);
+  roof.position.set(.15, 1.26, 0); g.add(roof);
+
+  // -- tekerlek + jant + disk --
+  const wheelGeo = new THREE.TorusGeometry(.30, .13, 12, 22);
+  const rimGeo = new THREE.CylinderGeometry(.19, .19, .26, 14);
+  const hubGeo = new THREE.SphereGeometry(.06, 10, 8);
+  [[-.88, .68],[-.88,-.68],[.95, .68],[.95,-.68]].forEach(p => {
+    const grp = new THREE.Group();
+    const tire = new THREE.Mesh(wheelGeo, rubber);
+    grp.add(tire);
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.rotation.x = Math.PI/2; grp.add(rim);
+    const hub = new THREE.Mesh(hubGeo, chrome);
+    grp.add(hub);
+    // jant kolları (spokes)
+    for (let s = 0; s < 5; s++) {
+      const sp = new THREE.Mesh(new THREE.BoxGeometry(.04, .3, .05), rimMat);
+      sp.rotation.z = s * Math.PI * 2 / 5;
+      sp.position.set(Math.cos(s*Math.PI*2/5)*.1, Math.sin(s*Math.PI*2/5)*.1, 0);
+      grp.add(sp);
+    }
+    grp.rotation.y = Math.PI/2;
+    grp.position.set(p[0], .31, p[1]);
+    g.add(grp);
+  });
+
+  // -- farlar ve stoplar --
+  [[-.06,.62,.42],[-.06,.62,-.42]].forEach(p => {
+    const h = new THREE.Mesh(new THREE.BoxGeometry(.1, .12, .3),
+      new THREE.MeshStandardMaterial({ color:0xfff7d6, emissive:0x665200, emissiveIntensity:.7 }));
+    h.position.set(-1.36, .62, p[2]); g.add(h);
+  });
+  [[1.36, .62, .42],[1.36, .62, -.42]].forEach(p => {
+    const t = new THREE.Mesh(new THREE.BoxGeometry(.08, .12, .3),
+      new THREE.MeshStandardMaterial({ color:0xff3b30, emissive:0x5a0f0a, emissiveIntensity:.8 }));
+    t.position.set(p[0], p[1], p[2]); g.add(t);
+  });
+  // far huzmesi
+  const beam = new THREE.PointLight(0xfff2c0, .8, 4);
+  beam.position.set(-1.4, .62, 0); g.add(beam);
+
+  // -- aynalar --
+  [[.13, .62, -.68],[.13, .62, .68]].forEach(p => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(.04, .04, .12), paintDark);
+    arm.position.set(p[0], p[1], p[2]); g.add(arm);
+    const mir = new THREE.Mesh(new THREE.BoxGeometry(.09, .09, .04), glass);
+    mir.position.set(p[0], p[1] + .01, p[2] + (p[2] > 0 ? .08 : -.08)); g.add(mir);
+  });
+
+  // -- kapı çizgileri --
+  [.615, -.615].forEach(z => {
+    const line = new THREE.Mesh(new THREE.BoxGeometry(1.4, .02, .012), stdMat(0x7a1012,.5,.4));
+    line.position.set(.15, .78, z); g.add(line);
+  });
+
+  // -- egzoz --
+  [-.4, .4].forEach(z => {
+    const ex = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, .18, 10), chrome);
+    ex.rotation.z = Math.PI/2;
+    ex.position.set(1.42, .3, z); g.add(ex);
+  });
+
+  // -- spoyler --
+  const spArmMat = paintDark;
+  [-.5, .5].forEach(z => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(.1, .22, .06), spArmMat);
+    arm.position.set(1.15, 1.32, z); g.add(arm);
+  });
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(.42, .05, 1.2), paintDark);
+  wing.position.set(1.15, 1.45, 0); g.add(wing);
+
+  return { size:new CANNON.Vec3(2.75, 1.5, 1.34), offset:.02, mass:90 };
+}
+
+function makeTV(g) {
+  const frameMat = stdMat(0x101318, .45, .6);
+  const aluMat = stdMat(0x9aa3ad, .3, .9);
+  const screenMat = new THREE.MeshStandardMaterial({ color:0x050b14, roughness:.08, metalness:.5,
+    emissive:0x0d3a66, emissiveIntensity:1.1 });
+  // ana govde (ince)
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.42, .12), frameMat);
+  frame.position.y = 1.5; g.add(frame);
+  // ekran biraz icerde
+  const screen = new THREE.Mesh(new THREE.BoxGeometry(2.32, 1.34, .02), screenMat);
+  screen.position.set(0, 1.5, -.065); g.add(screen);
+  // ekran içi "yansıma" çizgisi
+  const shine = new THREE.Mesh(new THREE.BoxGeometry(.9, 1.3, .005),
+    new THREE.MeshBasicMaterial({ color:0x3f7fd0, transparent:true, opacity:.13 }));
+  shine.rotation.z = .5; shine.position.set(-.5, 1.5, -.078); g.add(shine);
+  // ekran hafif ışıma (ambient glow)
+  const glow = new THREE.PointLight(0x2e8bff, .5, 2.5);
+  glow.position.set(0, 1.5, -.4); g.add(glow);
+  // ekran dış çerçevesi (bezel)
+  const bezel = new THREE.Mesh(new THREE.BoxGeometry(2.44, 1.46, .1), stdMat(0x05070a,.4,.7));
+  bezel.position.set(0, 1.5, -.01); g.add(bezel);
+  // arka kabartma
+  const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.24, .08), stdMat(0x181d24,.6,.4));
+  back.position.set(0, 1.5, .09); g.add(back);
+  // marka logosu
+  const logo = new THREE.Mesh(new THREE.BoxGeometry(.22, .05, .02),
+    new THREE.MeshStandardMaterial({ color:0xd0d5db, metalness:.9, roughness:.25 }));
+  logo.position.set(0, .78, -.07); g.add(logo);
+  // merkezi ayak (modern TV gibi)
+  const neck = new THREE.Mesh(new THREE.BoxGeometry(.12, .5, .1), aluMat);
+  neck.position.set(0, .5, 0); g.add(neck);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.1, .06, .42), aluMat);
+  base.position.set(0, .03, 0); g.add(base);
+  // ayak altı kauçuk
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(1.02, .03, .36), stdMat(0x0a0c10,.9,.1));
+  pad.position.set(0, .015, 0); g.add(pad);
+  // alt LED şeridi
+  const led = new THREE.Mesh(new THREE.BoxGeometry(2.3, .02, .015),
+    new THREE.MeshBasicMaterial({ color:0x2e8bff }));
+  led.position.set(0, .79, -.075); g.add(led);
+  return { size:new CANNON.Vec3(2.4, 1.75, .55), offset:.05, mass:40 };
+}
+
+function makeBalloon(g) {
+  // elastik parıltılı yüzey
+  const ballMat = new THREE.MeshPhysicalMaterial({ color:0xff5252, roughness:.15, metalness:0,
+    clearcoat:1, clearcoatRoughness:.1 });
+  const stripeMat = new THREE.MeshPhysicalMaterial({ color:0xfdfdfd, roughness:.15, metalness:0,
+    clearcoat:1, clearcoatRoughness:.1 });
+  // hafif damla şekli (üstü biraz sivri)
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(1.18, 40, 28), ballMat);
+  ball.scale.set(1, 1.06, 1);
+  ball.position.y = 1.22; g.add(ball);
+  // dikişsiz beyaz kuşaklar
+  const s1 = new THREE.Mesh(new THREE.TorusGeometry(1.17, .09, 12, 40), stripeMat);
+  s1.rotation.x = Math.PI/2; s1.position.y = 1.22; s1.scale.set(1,1,1.05); g.add(s1);
+  const s2 = s1.clone(); s2.rotation.set(0, Math.PI/2, 0); s2.scale.set(1.05,.55,1); g.add(s2);
+  const s3 = s1.clone(); s3.rotation.set(0, Math.PI/4, 0); s3.scale.set(1.02,.5,1); g.add(s3);
+  // parlak spot (speküler nokta)
+  const glint = new THREE.Mesh(new THREE.SphereGeometry(.16, 12, 10),
+    new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:.55 }));
+  glint.position.set(-.55, 1.75, .75); g.add(glint);
+  // fişek düğümü ve ip
+  const knot = new THREE.Mesh(new THREE.ConeGeometry(.11, .22, 10), stripeMat);
+  knot.position.y = .06; knot.rotation.x = Math.PI; g.add(knot);
+  const stringMat = new THREE.MeshBasicMaterial({ color:0xdddddd });
+  const string = new THREE.Mesh(new THREE.CylinderGeometry(.012, .012, .38, 6), stringMat);
+  string.position.y = -.16; g.add(string);
+  // ip ucu hafif kıvrım
+  const tip = new THREE.Mesh(new THREE.TorusGeometry(.06, .012, 6, 12), stringMat);
+  tip.position.set(.05, -.36, 0); tip.rotation.y = Math.PI/3; g.add(tip);
+  return { size:new CANNON.Vec3(2.1, 2.1, 2.1), offset:1.15, mass:8, sphere:true, r:1.2 };
+}
+
+function makeSafe(g) {
+  const steelMat = stdMat(0x3d4654, .38, .9);
+  const steelDark = stdMat(0x2b323d, .45, .85);
+  const goldMat = stdMat(0xd4a017, .28, .95);
+  const blackMat = stdMat(0x14171c, .8, .3);
+
+  // -- ana gövde (kosebentli) --
+  const box = new THREE.Mesh(new THREE.BoxGeometry(1.55, 1.85, 1.35), steelMat);
+  box.position.y = .95; g.add(box);
+  // köşe korumaları
+  const cornerGeo = new THREE.BoxGeometry(.09, 1.85, .09);
+  [[-.73, .6], [.73, .6], [-.73, -.6], [.73, -.6]].forEach(c => {
+    const cr = new THREE.Mesh(cornerGeo, steelDark);
+    cr.position.set(c[0], .95, c[1]); g.add(cr);
+  });
+  // kapı (dışa bombeli his)
+  const door = new THREE.Mesh(new THREE.BoxGeometry(.1, 1.62, 1.16), stdMat(0x55627a,.35,.9));
+  door.position.set(.79, .95, 0); g.add(door);
+  // kapı kenar çerçevesi
+  const dFrame = new THREE.Mesh(new THREE.BoxGeometry(.06, 1.7, 1.22), steelDark);
+  dFrame.position.set(.74, .95, 0); g.add(dFrame);
+  // menteşeler
+  [-.45, .45].forEach(z => {
+    const h = new THREE.Mesh(new THREE.CylinderGeometry(.035, .035, .2, 8), steelDark);
+    h.rotation.x = Math.PI/2;
+    h.position.set(.76, .95, z + (z > 0 ? .62 : -.62)); g.add(h);
+  });
+  // -- kadran (kolayı) --
+  const dialRing = new THREE.Mesh(new THREE.CylinderGeometry(.2, .2, .06, 20), goldMat);
+  dialRing.rotation.z = Math.PI/2; dialRing.position.set(.86, 1.05, 0); g.add(dialRing);
+  const dial = new THREE.Mesh(new THREE.CylinderGeometry(.14, .14, .08, 20), blackMat);
+  dial.rotation.z = Math.PI/2; dial.position.set(.87, 1.05, 0); g.add(dial);
+  // kadran çentikleri
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * Math.PI * 2;
+    const n = new THREE.Mesh(new THREE.BoxGeometry(.02, .03, .012), goldMat);
+    n.rotation.y = a;
+    n.position.set(.915, 1.05 + Math.cos(a) * .11, Math.sin(a) * .11);
+    g.add(n);
+  }
+  // kadran kolu
+  const spoke = new THREE.Mesh(new THREE.BoxGeometry(.02, .04, .12), goldMat);
+  spoke.position.set(.915, 1.05, .06); g.add(spoke);
+  // -- kulp (çelik kol) --
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(.13, .028, 8, 24), chromeMatSafe());
+  handle.rotation.y = Math.PI/2; handle.position.set(.88, .62, .28); g.add(handle);
+  // -- cıvatalar (etrafına 8 adet) --
+  for (let i = 0; i < 8; i++) {
+    const a = i / 8 * Math.PI * 2;
+    const rv = new THREE.Mesh(new THREE.CylinderGeometry(.035, .035, .06, 6), goldMat);
+    rv.rotation.z = Math.PI/2;
+    rv.position.set(.84, .95 + Math.cos(a) * .78, Math.sin(a) * .5);
+    g.add(rv);
+  }
+  // -- üst plaka "GÜVENLİK" etiketi --
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(.5, .14, .02),
+    new THREE.MeshStandardMaterial({ color:0xc9a227, metalness:.9, roughness:.3 }));
+  plate.position.set(.84, 1.72, 0); g.add(plate);
+  // -- içi hafif görünür iç yapı (üst kısımda gölge) --
+  const innerShadow = new THREE.Mesh(new THREE.BoxGeometry(.02, 1.4, 1.0),
+    new THREE.MeshBasicMaterial({ color:0x05070a }));
+  innerShadow.position.set(.82, .9, 0); g.add(innerShadow);
+  return { size:new CANNON.Vec3(1.6, 1.9, 1.4), offset:.05, mass:260 };
+}
+function chromeMatSafe() { return stdMat(0xd8dde3, .18, .95); }
+
+function makeTarget(id) {
+  // eskisini temizle
+  if (targetGroup) {
+    scene.remove(targetGroup);
+    if (targetGroup.body) world.removeBody(targetGroup.body);
+  }
+  debris.forEach(d => { scene.remove(d.mesh); world.removeBody(d.body); });
+  debris = []; coins.forEach(c => { scene.remove(c.mesh); world.removeBody(c.body); }); coins = [];
+
+  // ONCELIKLI DUZELTME: merkezde duran gulleleri kaldir ki yeni cisim
+  // iclerine dogup firlamasin — temiz bir sekilde alanin ortasında belirmesi icin
+  for (let i = ballBodies.length - 1; i >= 0; i--) {
+    const p = ballBodies[i].position;
+    if (p.y < 4 && Math.hypot(p.x, p.z) < 2.8) {
+      world.removeBody(ballBodies[i]);
+      scene.remove(ballMeshes[i]);
+      ballBodies.splice(i, 1);
+      ballMeshes.splice(i, 1);
+    }
+  }
+
+  const def = OBJS.find(o => o.id === id);
+  const vis = new THREE.Group();
+  let info;
+  if (id === "car") info = makeCar(vis);
+  else if (id === "tv") info = makeTV(vis);
+  else if (id === "ballon") info = makeBalloon(vis);
+  else info = makeSafe(vis);
+  vis.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+  // kok grup fizik kutlesinin merkezine oturur; model asagi hizalanir
+  const root = new THREE.Group();
+  root.add(vis);
+  const halfH = info.sphere ? info.r : info.size.y/2;
+  vis.position.y = -(halfH + 0.02);
+  scene.add(root);
+  targetGroup = root;
+
+  const shape = info.sphere
+    ? new CANNON.Sphere(info.r)
+    : new CANNON.Box(new CANNON.Vec3(info.size.x/2, info.size.y/2, info.size.z/2));
+  // SABIT CISIM: kütlesi 0 → yerinden hiç kımıldamaz, itilemez, düşmez.
+  // Gülle üstüne düşer, cisim orada sabit şekilde ezilir.
+  const body = new CANNON.Body({ mass:0 });
+  body.addShape(shape);
+  body.position.set(0, halfH + 0.02, 0);
+  world.addBody(body);
+  root.body = body;
+  root.halfH = halfH;
+  root.hp = targetHP = targetMaxHP = def.hp;
+  root.objId = id;
+  updateHUD();
+}
+
+/* ================= GULLE BIRAKMA ================= */
+function dropBall() {
+  const def = BALLS.find(b => b.id === selectedBall);
+  const geo = new THREE.SphereGeometry(def.r, 22, 16);
+  const mat = new THREE.MeshStandardMaterial({ color:def.color, roughness:.45, metalness:.75 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = mesh.receiveShadow = true;
+  scene.add(mesh);
+
+  const body = new CANNON.Body({ mass: def.kg });
+  body.addShape(new CANNON.Sphere(def.r));
+  body.position.set(0, DROP_H + 3.1, 0);
+  body.linearDamping = .01;
+  world.addBody(body);
+  ballBodies.push(body); ballMeshes.push(mesh);
+  body.tag = "ball"; body.kg = def.kg; body.ballDef = def;
+  dropCount++;
+
+  // birakma asamasi: hedef ustunde yesil isik efekti
+  const flash = new THREE.PointLight(0xffd740, 4, 6);
+  flash.position.copy(mesh.position);
+  scene.add(flash);
+  setTimeout(() => scene.remove(flash), 350);
+}
+
+/* ================= HASAR & EZILME ================= */
+function onHit(relVel, ballKg) {
+  const energy = 0.5 * ballKg * relVel * relVel;   // kinetik enerji (Joule)
+  const dmg = Math.max(3, energy * 0.06);          // dengeli: kasa sert, top yumusak
+  targetHP = Math.max(0, targetHP - dmg);
+  score += Math.round(dmg);
+  updateHUD();
+  shakeCam(Math.min(1, dmg/260));
+  if (targetHP <= 0) crushTarget();
+}
+
+function crushTarget() {
+  if (!targetGroup || targetGroup.crushed) return;
+  targetGroup.crushed = true;
+  const def = OBJS.find(o => o.id === targetGroup.objId);
+  showBanner("💥 " + def.name.toUpperCase() + " EZİLDİ! 💥");
+  score += Math.round(targetMaxHP * .5);
+  crushedCount++;
+  updateHUD();
+
+  // hedefi fizikten cikar, parcalara ayir
+  world.removeBody(targetGroup.body);
+  scene.remove(targetGroup);
+  spawnDebris(targetGroup);
+  if (targetGroup.objId === "safe") spawnCoins();
+  targetGroup = null;
+
+  // 2 sn sonra ayni cisim yeniden dogar
+  setTimeout(() => {
+    if (!targetGroup) {
+      showBanner("🔄 " + def.name + " yeniden geldi!");
+      makeTarget(selectedObj);
+    }
+  }, 2000);
+}
+
+function spawnDebris(srcGroup) {
+  const src = [];
+  srcGroup.traverse(o => { if (o.isMesh && o.geometry) src.push(o); });
+  const count = Math.min(src.length, 14);
+  const taken = new Set();
+  for (let i = 0; i < count; i++) {
+    let m = src[i];
+    if (taken.has(m)) m = src[Math.floor(Math.random()*src.length)];
+    taken.add(m);
+    const piece = new THREE.Mesh(m.geometry, m.material);
+    piece.castShadow = true;
+    scene.add(piece);
+    const s = m.getWorldPosition(new THREE.Vector3());
+    // geometri merkezi modelin ortasinda olabilir; parca merkezini dunya konumuna tasi
+    m.updateWorldMatrix(true, false);
+    const sz = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
+    const shape = new CANNON.Box(new CANNON.Vec3(Math.max(.05,sz.x/2), Math.max(.05,sz.y/2), Math.max(.05,sz.z/2)));
+    const body = new CANNON.Body({ mass:2 });
+    body.addShape(shape);
+    body.position.set(s.x, s.y, s.z);
+    body.velocity.set((Math.random()-.5)*7, 4+Math.random()*5, (Math.random()-.5)*7);
+    body.angularVelocity.set(Math.random()*8-4, Math.random()*8-4, Math.random()*8-4);
+    world.addBody(body);
+    debris.push({ mesh:piece, body, ttl:9 });
+  }
+}
+
+function spawnCoins() {
+  const goldMat = new THREE.MeshStandardMaterial({ color:0xffd54f, roughness:.25, metalness:.95 });
+  const geo = new THREE.CylinderGeometry(.11,.11,.035,12);
+  for (let i=0;i<26;i++) {
+    const c = new THREE.Mesh(geo, goldMat);
+    c.castShadow = true; scene.add(c);
+    const body = new CANNON.Body({ mass:.4 });
+    body.addShape(new CANNON.Sphere(.09));
+    body.position.set((Math.random()-.5)*1.2, 1.4+Math.random()*.8, (Math.random()-.5)*1.2);
+    body.velocity.set((Math.random()-.5)*9, 5+Math.random()*6, (Math.random()-.5)*9);
+    body.angularVelocity.set(Math.random()*14-7, Math.random()*14-7, Math.random()*14-7);
+    world.addBody(body);
+    coins.push({ mesh:c, body, ttl:12 });
+  }
+}
+
+/* ================= HUD & BANNER ================= */
+function updateHUD() {
+  document.getElementById("scoreV").textContent = score;
+  document.getElementById("crushV").textContent = crushedCount + " / 4";
+  const pct = targetGroup ? Math.round(targetHP/targetMaxHP*100) : 0;
+  document.getElementById("hpV").textContent = "%" + pct;
+  document.getElementById("dmgFill").style.width = pct + "%";
+}
+function showBanner(txt) {
+  const b = document.getElementById("banner");
+  b.textContent = txt; b.classList.add("show");
+  clearTimeout(b._t);
+  b._t = setTimeout(() => b.classList.remove("show"), 1600);
+}
+
+/* ================= TEMIZLE ================= */
+function clearAll() {
+  ballBodies.forEach(b => world.removeBody(b)); ballBodies = [];
+  ballMeshes.forEach(m => scene.remove(m)); ballMeshes = [];
+  debris.forEach(d => { scene.remove(d.mesh); world.removeBody(d.body); }); debris = [];
+  coins.forEach(c => { scene.remove(c.mesh); world.removeBody(c.body); }); coins = [];
+  if (targetGroup) {
+    const id = targetGroup.objId;
+    scene.remove(targetGroup); world.removeBody(targetGroup.body); targetGroup = null;
+    makeTarget(id);
+  }
+  updateHUD();
+}
+
+/* ================= KAMERA KONTROLU ================= */
+let dragging = false, lastX = 0, lastY = 0, shakeT = 0, shakeAmt = 0;
+function shakeCam(a) { shakeT = .35; shakeAmt = Math.max(shakeAmt, a); }
+
+function onResize() {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+}
+function bindControls() {
+  const el = renderer.domElement;
+  el.addEventListener("pointerdown", e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+  addEventListener("pointermove", e => {
+    if (!dragging) return;
+    camTheta -= (e.clientX - lastX) * .0055;
+    camPhi = Math.max(.12, Math.min(1.45, camPhi + (e.clientY - lastY) * .005));
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  addEventListener("pointerup", () => dragging = false);
+  el.addEventListener("wheel", e => {
+    e.preventDefault();
+    camDist = Math.max(4, Math.min(28, camDist + e.deltaY * .012));
+  }, { passive:false });
+  // dokunmatik pinch zoom
+  let pinchD = 0;
+  el.addEventListener("touchstart", e => {
+    if (e.touches.length === 2) pinchD = Math.hypot(
+      e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+  });
+  el.addEventListener("touchmove", e => {
+    if (e.touches.length === 2 && pinchD > 0) {
+      const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      camDist = Math.max(4, Math.min(28, camDist * (pinchD/d)));
+      pinchD = d;
+    }
+  }, { passive:true });
+}
+
+/* ================= ANA DONGU ================= */
+let lastT = performance.now(), hitCD = 0;
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((now - lastT)/1000, .05);
+  lastT = now;
+  world.step(1/60, dt, 4);
+
+  // hedefe hasar tespiti
+  hitCD -= dt;
+  if (targetGroup && !targetGroup.crushed && hitCD <= 0 && targetGroup.body) {
+    for (const b of ballBodies) {
+      const dist = b.position.distanceTo(targetGroup.body.position);
+      const reach = 1.1 + b.shapes[0].radius + (targetGroup.halfH || 1);
+      const relV = b.velocity.norm() + targetGroup.body.velocity.norm();
+      if (dist < reach && relV > 3.2) {
+        onHit(Math.min(relV, 30), b.kg);
+        hitCD = .22;
+        break;
+      }
+    }
+  }
+
+  // gulle mesh senkron
+  for (let i = ballBodies.length-1; i >= 0; i--) {
+    const b = ballBodies[i], m = ballMeshes[i];
+    m.position.copy(b.position); m.quaternion.copy(b.quaternion);
+    if (b.position.y < -6 || b.position.norm() > 40) {
+      world.removeBody(b); scene.remove(m);
+      ballBodies.splice(i,1); ballMeshes.splice(i,1);
+    }
+  }
+
+  // hedef senkron + kacis guvenligi
+  if (targetGroup && targetGroup.body) {
+    const p = targetGroup.body.position;
+    // alandan kactiysa veya zeminin altina dustuysa yerine geri getir
+    if (p.y < -1.5 || Math.hypot(p.x, p.z) > 6.5) {
+      const keepHP = targetGroup.hp / targetMaxHP;   // hasar durumu korunur
+      const id = targetGroup.objId;
+      scene.remove(targetGroup);
+      world.removeBody(targetGroup.body);
+      targetGroup = null;
+      makeTarget(id);
+      targetHP = Math.max(1, Math.round(targetMaxHP * keepHP));
+      targetGroup.hp = targetHP;
+      updateHUD();
+    } else {
+      targetGroup.position.copy(targetGroup.body.position);
+      targetGroup.quaternion.copy(targetGroup.body.quaternion);
+    }
+  }
+
+  // enkaz & para omru
+  for (let i = debris.length-1; i >= 0; i--) {
+    const d = debris[i];
+    d.mesh.position.copy(d.body.position);
+    d.mesh.quaternion.copy(d.body.quaternion);
+    d.ttl -= dt;
+    if (d.ttl < 2) d.mesh.scale.setScalar(Math.max(.01, d.ttl/2));
+    if (d.ttl <= 0) { scene.remove(d.mesh); world.removeBody(d.body); debris.splice(i,1); }
+  }
+  for (let i = coins.length-1; i >= 0; i--) {
+    const c = coins[i];
+    c.mesh.position.copy(c.body.position);
+    c.mesh.quaternion.copy(c.body.quaternion);
+    c.ttl -= dt;
+    if (c.ttl <= 0) { scene.remove(c.mesh); world.removeBody(c.body); coins.splice(i,1); }
+  }
+
+  // kamera
+  updateCamera(dt);
+  renderer.render(scene, camera);
+}
+
+function updateCamera(dt) {
+  let target = new THREE.Vector3(0, 1, 0);
+  if (shakeT > 0) {
+    shakeT -= dt;
+    const k = shakeAmt * shakeT / .35;
+    target = target.add(new THREE.Vector3(
+      (Math.random()-.5)*k*.6, (Math.random()-.5)*k*.5, (Math.random()-.5)*k*.6));
+    if (shakeT <= 0) shakeAmt = 0;
+  }
+  const sp = Math.sin(camPhi), cp = Math.cos(camPhi);
+  camera.position.set(
+    target.x + camDist * sp * Math.sin(camTheta),
+    target.y + camDist * cp,
+    target.z + camDist * sp * Math.cos(camTheta));
+  camera.lookAt(target);
+}
+
+/* ================= UI KURULUMU ================= */
+function buildUI() {
+  // --- gezegen paneli ---
+  const pList = document.getElementById("planetList");
+  PLANETS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.className = "pbtn";
+    btn.innerHTML = '<span class="psym">' + p.sym + '</span><span class="pinfo"><span>' + p.name +
+      '</span><span class="pg">' + p.g.toFixed(2) + ' m/s²</span></span>';
+    btn.onclick = () => {
+      currentPlanet = p.id;
+      world.gravity.set(0, -p.g, 0);
+      document.getElementById("curG").textContent = p.g.toFixed(2) + " m/s²";
+      [...pList.children].forEach(c => c.classList.remove("sel"));
+      btn.classList.add("sel");
+      // yataktan uyanan cisimleri uyandir ki yeni yercekimi etkilesin
+      ballBodies.forEach(b => b.wakeUp());
+      if (targetGroup && targetGroup.body) targetGroup.body.wakeUp();
+      debris.forEach(d => d.body.wakeUp());
+      coins.forEach(c => c.body.wakeUp());
+      showBanner(p.sym + " " + p.name.toUpperCase() + " YERÇEKİMİ");
+    };
+    if (p.id === currentPlanet) btn.classList.add("sel");
+    pList.appendChild(btn);
+  });
+
+  const objRow = document.getElementById("objRow");
+  OBJS.forEach(o => {
+    const btn = document.createElement("button");
+    btn.innerHTML = ({car:"🚗",tv:"📺",ballon:"🎈",safe:"💰"})[o.id] + " " + o.name +
+      "<small>Sağlamlık: " + o.hp + "</small>";
+    btn.onclick = () => {
+      selectedObj = o.id;
+      [...objRow.children].forEach(c => c.classList.remove("sel"));
+      btn.classList.add("sel");
+      makeTarget(o.id);
+    };
+    if (o.id === selectedObj) btn.classList.add("sel");
+    objRow.appendChild(btn);
+  });
+
+  const ballRow = document.getElementById("ballRow");
+  BALLS.forEach(b => {
+    const btn = document.createElement("button");
+    btn.innerHTML = ({t10:"🪨",g30:"⚫",g100:"⚫",g200:"⚫",g500:"⚫"})[b.id] + " " + b.kg + " kg" +
+      "<small>" + b.name + " • Yarıçap " + b.r + "m</small>";
+    btn.onclick = () => {
+      selectedBall = b.id;
+      [...ballRow.children].forEach(c => c.classList.remove("sel"));
+      btn.classList.add("sel");
+    };
+    if (b.id === selectedBall) btn.classList.add("sel");
+    ballRow.appendChild(btn);
+  });
+
+  document.getElementById("dropBtn").onclick = dropBall;
+  document.getElementById("clearBtn").onclick = clearAll;
+  setTimeout(() => { document.getElementById("hint").style.opacity = 0; }, 9000);
+}
+
+/* ================= BASLAT ================= */
+init();
+bindControls();
+</script>
+</body>
+</html>
