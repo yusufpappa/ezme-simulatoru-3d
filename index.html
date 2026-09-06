@@ -50,17 +50,18 @@
   #clearBtn { background:rgba(56,64,74,.9); font-size:12px; }
 
   /* ---------- GEZEGEN PANELI (SOL) ---------- */
-  #planetPanel { position:fixed; left:10px; top:50%; transform:translateY(-50%); z-index:6;
-    display:flex; flex-direction:column; gap:4px; max-height:78vh; overflow-y:auto;
+  #planetPanel { position:fixed; left:10px; top:58px; bottom:182px; z-index:6;
+    display:flex; flex-direction:column; gap:3px; overflow-y:auto;
     background:rgba(10,14,22,.72); backdrop-filter:blur(8px);
-    border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:8px; width:118px;
+    border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:7px; width:118px;
     scrollbar-width:thin; box-shadow:0 4px 18px rgba(0,0,0,.35); }
-  .pLabel { color:#7f93ab; font-size:9px; font-weight:800; letter-spacing:1.3px; text-align:center; }
-  #curG { color:#ffd740; font-size:10px; font-weight:800; text-align:center; margin:2px 0 4px; }
+  .pLabel { color:#7f93ab; font-size:9px; font-weight:800; letter-spacing:1.3px; text-align:center; flex-shrink:0; }
+  #curG { color:#ffd740; font-size:10px; font-weight:800; text-align:center; margin:2px 0 4px; flex-shrink:0; }
   .pbtn { cursor:pointer; border:1px solid rgba(255,255,255,.14); border-radius:10px;
-    background:rgba(30,40,58,.85); color:#e8f0fb; padding:5px 6px; font-size:11.5px;
+    background:rgba(30,40,58,.85); color:#e8f0fb; padding:4px 6px; font-size:11.5px;
     font-weight:700; font-family:inherit; text-align:left; line-height:1.3;
-    transition:transform .08s, background .15s; display:flex; align-items:center; gap:6px; }
+    transition:transform .08s, background .15s; display:flex; align-items:center; gap:6px;
+    flex-shrink:0; }
   .pbtn:hover { background:rgba(48,64,92,.95); transform:translateX(2px); }
   .pbtn:active { transform:scale(.95); }
   .pbtn.sel { background:linear-gradient(90deg,#7b4fd6,#4a2f9e); border-color:#b39dff;
@@ -133,6 +134,14 @@ const PLANETS = [
   { id:"neptune", sym:"🔷", name:"Neptün",   g:11.15 },
 ];
 let currentPlanet = "earth";
+// OYUN HISSI CARPANI: gercek degerler arasindaki fark ekranda az hissedildigi
+// icin fizik motoruna uygulanan yercekimi abartilir (panelde gercek deger yazar).
+// Dunya ~16.7, Jupiter ~42, Merkur ~6.3 m/s2 gibi hissedilir.
+const G_BOOST = 1.7;
+function planetG(id) {
+  const p = PLANETS.find(x => x.id === id);
+  return p ? p.g * G_BOOST : 9.81 * G_BOOST;
+}
 
 /* ================= SENDER ================= */
 let scene, camera, renderer, world;
@@ -173,8 +182,7 @@ function init() {
 
   // fizik dunyasi
   world = new CANNON.World();
-  const earthDef = PLANETS.find(p => p.id === currentPlanet);
-  world.gravity.set(0, -earthDef.g, 0);
+  world.gravity.set(0, -planetG(currentPlanet), 0);
   world.broadphase = new CANNON.SAPBroadphase();
   world.allowSleep = true;
 
@@ -908,7 +916,7 @@ function buildUI() {
       '</span><span class="pg">' + p.g.toFixed(2) + ' m/s²</span></span>';
     btn.onclick = () => {
       currentPlanet = p.id;
-      world.gravity.set(0, -p.g, 0);
+      world.gravity.set(0, -planetG(p.id), 0);
       document.getElementById("curG").textContent = p.g.toFixed(2) + " m/s²";
       [...pList.children].forEach(c => c.classList.remove("sel"));
       btn.classList.add("sel");
