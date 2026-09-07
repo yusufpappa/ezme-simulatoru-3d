@@ -90,9 +90,10 @@
 <div id="stats">
   <div class="chip">Ezme Puanı <b id="scoreV">0</b></div>
   <div class="chip">Ezilen Cisim <b id="crushV">0 / 4</b></div>
-  <div class="chip">Hedef Sağlamlığı <b id="hpV">%100</b>
+  <div class="chip" id="hpChip">Hedef Sağlamlığı <b id="hpV">%100</b>
     <div class="bar"><div id="dmgFill"></div></div>
   </div>
+  <div id="raceHP" style="display:none; flex-direction:column; gap:4px;"></div>
 </div>
 <div id="banner"></div>
 <div id="planetPanel">
@@ -949,9 +950,27 @@ function spawnCoins() {
 function updateHUD() {
   document.getElementById("scoreV").textContent = score;
   document.getElementById("crushV").textContent = crushedCount + " / 4";
-  const pct = targetGroup ? Math.round(targetHP/targetMaxHP*100) : 0;
-  document.getElementById("hpV").textContent = "%" + pct;
-  document.getElementById("dmgFill").style.width = pct + "%";
+  // sayfa 1: tek can kutusu; sayfa 2: 8 gezegen kutusu
+  if (raceMode) {
+    document.getElementById("hpChip").style.display = "none";
+    const el = document.getElementById("raceHP");
+    el.style.display = "flex";
+    el.innerHTML = PLANETS.map((p, i) => {
+      const hp = laneHP[i] || { hp:1, maxHp:1 };
+      const pct = Math.max(0, Math.round(hp.hp / hp.maxHp * 100));
+      return '<div class="chip" style="min-width:170px;padding:4px 10px;">' + p.sym + " " + p.name +
+        " <b>%" + pct + "</b>" +
+        '<div class="bar"><div style="height:100%;width:' + pct +
+        '%;border-radius:4px;background:linear-gradient(90deg,#7fe8a8,#2eaa5e);"></div></div></div>';
+    }).join("");
+  } else {
+    document.getElementById("hpChip").style.display = "block";
+    document.getElementById("raceHP").style.display = "none";
+    document.getElementById("raceHP").innerHTML = "";
+    const pct = targetGroup ? Math.round(targetHP/targetMaxHP*100) : 0;
+    document.getElementById("hpV").textContent = "%" + pct;
+    document.getElementById("dmgFill").style.width = pct + "%";
+  }
 }
 function showBanner(txt) {
   const b = document.getElementById("banner");
@@ -966,6 +985,13 @@ function clearAll() {
   ballMeshes.forEach(m => scene.remove(m)); ballMeshes = [];
   debris.forEach(d => { scene.remove(d.mesh); world.removeBody(d.body); }); debris = [];
   coins.forEach(c => { scene.remove(c.mesh); world.removeBody(c.body); }); coins = [];
+  // sayfa 2: canlar dolsun, hedefler tazelensin
+  if (raceMode) {
+    raceTargetsBuilt = false;
+    dropRace();
+    updateHUD();
+    return;
+  }
   if (targetGroup) {
     const id = targetGroup.objId;
     scene.remove(targetGroup); world.removeBody(targetGroup.body); targetGroup = null;
@@ -1019,10 +1045,10 @@ function loop(now) {
   const dt = Math.min((now - lastT)/1000, .05);
   lastT = now;
   if (raceMode) {
-    // yarisma: once dusuk yercekimiyle adimla, sonra ek kuvvetler uygulanir
-    world.gravity.set(0, -3.7 * G_BOOST, 0);   // en dusuk gezegen (Merkur) tabani
-    world.step(1/60, dt, 4);
+    // yarisma: motorun yercekimi 0, her gulle kendi gezegen kuvvetini adim ONCESI alir
+    world.gravity.set(0, 0, 0);
     applyRaceGravity(dt);
+    world.step(1/60, dt, 4);
     updateRaceStats(dt);
     updateCamera(dt);
     renderer.render(scene, camera);
@@ -1149,7 +1175,12 @@ function buildUI() {
       selectedObj = o.id;
       [...objRow.children].forEach(c => c.classList.remove("sel"));
       btn.classList.add("sel");
-      makeTarget(o.id);
+      if (raceMode) {
+        raceTargetsBuilt = false;   // cisim degisti: hedefler ve canlar tazelenecek
+        dropRace();                 // yeniden kur (gulle birakmadan sadece kurulum)
+      } else {
+        makeTarget(o.id);
+      }
     };
     if (o.id === selectedObj) btn.classList.add("sel");
     objRow.appendChild(btn);
@@ -1180,11 +1211,12 @@ function buildUI() {
 let raceMode = false, raceBalls = [], raceLabels = [], raceArrows = [];
 let raceStart = 0, raceDone = false, raceWinnerShown = false;
 let laneHP = {};   // serit bazli can: { planet, hp, maxHp }
+let raceTargetsBuilt = false;   // hedefler kuruldu mu (can korunur)
 const LANE_W = 2.05, LANE_X0 = -7.2, LANE_X1 = 7.2;   // 8 serit araligi
 
 function enterRace() {
   raceMode = true;
-  clearAll();
+  raceTargetsBuilt = false;         // hedefler taze kurulur
   // sahneyi temizle
   if (targetGroup) { scene.remove(targetGroup); world.removeBody(targetGroup.body); targetGroup = null; }
   ballBodies.forEach(b => world.removeBody(b)); ballBodies = [];
@@ -1209,6 +1241,7 @@ function enterRace() {
 
 function exitRace() {
   raceMode = false;
+  raceTargetsBuilt = false;         // bir dahaki giriste taze kurulur
   raceBalls.forEach(r => { scene.remove(r.mesh); world.removeBody(r.body); });
   raceLanes.forEach(l => scene.remove(l)); raceLanes = [];
   raceBalls = [];
@@ -1272,44 +1305,66 @@ function makeLabel(text, color) {
 }
 
 // 8 seritte ayni cisim + ayni gulle, her seritte gezegenin yercekimi
+// CAN KORUNUR: cisimler sadece ilk kez olusturulur; her BIRAK'ta yalniz
+// gulleler yenilenir. Can yenilenmez! Yeni cisim sadece secim degisince
+// veya Temizle'ye basinca dolur.
 function dropRace() {
-  clearRaceBalls();
   const ballDef = BALLS.find(b => b.id === selectedBall);
   const objDef = OBJS.find(o => o.id === selectedObj);
   raceDone = false; raceWinnerShown = false;
   raceStart = performance.now();
-  document.getElementById("raceStats").innerHTML = "";
-  laneHP = {};   // serit canlari
 
+  // eski gulleleri temizle (cisimler kalsin!)
+  raceBalls.filter(r => r.type === "ball").forEach(r => {
+    scene.remove(r.mesh); world.removeBody(r.body);
+  });
+  raceBalls = raceBalls.filter(r => r.type !== "ball");
+  raceArrows.forEach(a => scene.remove(a)); raceArrows = [];
+
+  // ilk kez ise (veya cisim degistiyse) hedefleri kur
+  if (!raceTargetsBuilt) {
+    raceLabels.forEach(l => scene.remove(l)); raceLabels = [];
+    raceBalls.filter(r => r.type === "target").forEach(r => {
+      scene.remove(r.mesh); world.removeBody(r.body);
+    });
+    raceBalls = [];
+    laneHP = {};
+    for (let i = 0; i < 8; i++) {
+      const p = PLANETS[i];
+      const x = LANE_X0 + i * (LANE_X1 - LANE_X0) / 7;
+      const g = new THREE.Group();
+      let info;
+      if (objDef.id === "car") info = makeCar(g);
+      else if (objDef.id === "tv") info = makeTV(g);
+      else if (objDef.id === "ballon") info = makeBalloon(g);
+      else info = makeSafe(g);
+      g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      const halfH = info.sphere ? info.r : info.size.y/2;
+      g.position.set(x, 0, 0);
+      g.scale.setScalar(.78);
+      scene.add(g);
+      const shape = info.sphere ? new CANNON.Sphere(info.r * .78)
+        : new CANNON.Box(new CANNON.Vec3(info.size.x/2*.78, info.size.y/2*.78, info.size.z/2*.78));
+      const tb = new CANNON.Body({ mass:0 });
+      tb.addShape(shape);
+      tb.position.set(x, halfH*.78 + .02, 0);
+      world.addBody(tb);
+      raceBalls.push({ type:"target", mesh:g, body:tb, planet:p, lane:i,
+        hp:objDef.hp, maxHp:objDef.hp, crushed:false, halfH:halfH*.78 });
+      laneHP[i] = { planet:p, hp:objDef.hp, maxHp:objDef.hp };
+
+      // gezegen etiketi
+      const lbl = makeLabel(p.name, "#ffd740");
+      lbl.position.set(x, halfH*.78 + 1.15 + (info.sphere ? .4 : .9), 0);
+      scene.add(lbl); raceLabels.push(lbl);
+    }
+    raceTargetsBuilt = true;
+  }
+
+  // gulleleri birak (her seritte ayni gulle)
   for (let i = 0; i < 8; i++) {
     const p = PLANETS[i];
     const x = LANE_X0 + i * (LANE_X1 - LANE_X0) / 7;
-    // cisim (sabit, serit ortasinda)
-    const g = new THREE.Group();
-    let info;
-    if (objDef.id === "car") info = makeCar(g);
-    else if (objDef.id === "tv") info = makeTV(g);
-    else if (objDef.id === "ballon") info = makeBalloon(g);
-    else info = makeSafe(g);
-    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    const halfH = info.sphere ? info.r : info.size.y/2;
-    g.position.set(x, 0, 0);
-    g.scale.setScalar(.78);   // serit icinde kalsin
-    scene.add(g);
-    // sabit fizik kutlesi
-    const shape = info.sphere ? new CANNON.Sphere(info.r * .78)
-      : new CANNON.Box(new CANNON.Vec3(info.size.x/2*.78, info.size.y/2*.78, info.size.z/2*.78));
-    const tb = new CANNON.Body({ mass:0 });
-    tb.addShape(shape);
-    tb.position.set(x, halfH*.78 + .02, 0);
-    world.addBody(tb);
-    raceBalls.push({ type:"target", mesh:g, body:tb, planet:p, lane:i,
-      hp:objDef.hp, maxHp:objDef.hp, crushed:false, halfH:halfH*.78 });
-
-    // serit can barlari (istatistik cubugu) — ustte gosterilir
-    laneHP[i] = { planet:p, hp:objDef.hp, maxHp:objDef.hp };
-
-    // gulle
     const bm = new THREE.Mesh(new THREE.SphereGeometry(ballDef.r * .82, 18, 14),
       new THREE.MeshStandardMaterial({ color:ballDef.color, roughness:.45, metalness:.75 }));
     bm.castShadow = true; scene.add(bm);
@@ -1320,11 +1375,6 @@ function dropRace() {
     world.addBody(bb);
     raceBalls.push({ type:"ball", mesh:bm, body:bb, planet:p, lane:i,
       startY:DROP_H + 3.1, hitTime:null, impactSpeed:0 });
-
-    // gezegen etiketi (cismin ustunde)
-    const lbl = makeLabel(p.name, "#ffd740");
-    lbl.position.set(x, halfH*.78 + 1.15 + (info.sphere ? .4 : .9), 0);
-    scene.add(lbl); raceLabels.push(lbl);
 
     // dusus oku (gorsel)
     const arr = new THREE.Mesh(new THREE.ConeGeometry(.13, .4, 8),
@@ -1346,15 +1396,16 @@ function clearRaceBalls() {
   raceArrows.forEach(a => scene.remove(a)); raceArrows = [];
 }
 
-// serit bazli yercekimi: ana dunya yercekimini en dusuge ayarla, sonra
-// her gulle/cisim icin gezegen oranina gore ek kuvvet uygula
+// serit bazli yercekimi: motor yercekimi 0, her gulle kendi gezegeninin
+// tam kuvvetini adimdan once alir (F = m*g, kutle ile carpilir)
 function applyRaceGravity(dt) {
   for (const r of raceBalls) {
-    if (r.type !== "ball" || r.hitTime !== null) continue;
-    const targetG = r.planet.g * G_BOOST;
-    const currentG = 9.81 * G_BOOST;               // dunya yercekimi (motor)
-    const extra = targetG - currentG;
-    if (Math.abs(extra) > 0.01) r.body.applyForce(new CANNON.Vec3(0, -extra * r.body.mass, 0), r.body.position);
+    if (r.type !== "ball") continue;
+    const g = r.planet.g * G_BOOST;
+    // sadece hareket halindeki gullelere uygula (yerde bekleyenler ziplamasin)
+    if (r.hitTime === null || r.body.velocity.norm() > .8) {
+      r.body.applyForce(new CANNON.Vec3(0, -g * r.body.mass, 0), r.body.position);
+    }
   }
 }
 
@@ -1419,7 +1470,7 @@ function updateRaceStats(dt) {
   raceArrows.forEach(a => { if (a.parent) a.visible = !raceDone; });
 
   // can barlarini ve istatistikleri guncelle (her zaman ustte)
-  if (hpChanged || !raceDone) renderRaceStats();
+  if (hpChanged || !raceDone) { renderRaceStats(); updateHUD(); }
 
   // tum gulleler carpti mi?
   if (anyPending) return;
