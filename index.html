@@ -76,12 +76,12 @@
     background:linear-gradient(180deg,#2eaa5e,#1c7f45); border-color:#7fe8a8;
     font-size:14px; padding:8px 14px; box-shadow:0 6px 16px rgba(28,127,69,.55); }
   #pageBtn:hover { background:linear-gradient(180deg,#37c56d,#219953); }
-  #raceStats { position:fixed; bottom:172px; left:50%; transform:translateX(-50%); z-index:6;
+  #raceStats { position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:6;
     display:none; gap:5px; flex-wrap:wrap; justify-content:center; max-width:96vw; }
-  .raceChip { background:rgba(13,18,28,.85); border:1px solid rgba(255,255,255,.14);
-    border-radius:9px; padding:4px 8px; color:#cfe0f5; font-size:11px; font-weight:700; }
+  .raceChip { background:rgba(13,18,28,.88); backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,.14); border-radius:9px; padding:5px 6px;
+    color:#cfe0f5; font-size:11px; font-weight:700; line-height:1.35; }
   .raceChip b { color:#ffd740; }
-  .raceChip.win { border-color:#7fe8a8; background:rgba(20,80,45,.9); color:#fff; }
 </style>
 </head>
 <body>
@@ -1179,6 +1179,7 @@ function buildUI() {
 /* ================= SAYFA 2: GEZEGEN YARISI ================= */
 let raceMode = false, raceBalls = [], raceLabels = [], raceArrows = [];
 let raceStart = 0, raceDone = false, raceWinnerShown = false;
+let laneHP = {};   // serit bazli can: { planet, hp, maxHp }
 const LANE_W = 2.05, LANE_X0 = -7.2, LANE_X1 = 7.2;   // 8 serit araligi
 
 function enterRace() {
@@ -1278,6 +1279,7 @@ function dropRace() {
   raceDone = false; raceWinnerShown = false;
   raceStart = performance.now();
   document.getElementById("raceStats").innerHTML = "";
+  laneHP = {};   // serit canlari
 
   for (let i = 0; i < 8; i++) {
     const p = PLANETS[i];
@@ -1301,7 +1303,11 @@ function dropRace() {
     tb.addShape(shape);
     tb.position.set(x, halfH*.78 + .02, 0);
     world.addBody(tb);
-    raceBalls.push({ type:"target", mesh:g, body:tb, planet:p, lane:i, hit:false });
+    raceBalls.push({ type:"target", mesh:g, body:tb, planet:p, lane:i,
+      hp:objDef.hp, maxHp:objDef.hp, crushed:false, halfH:halfH*.78 });
+
+    // serit can barlari (istatistik cubugu) — ustte gosterilir
+    laneHP[i] = { planet:p, hp:objDef.hp, maxHp:objDef.hp };
 
     // gulle
     const bm = new THREE.Mesh(new THREE.SphereGeometry(ballDef.r * .82, 18, 14),
@@ -1352,49 +1358,93 @@ function applyRaceGravity(dt) {
   }
 }
 
-// yarisma dongusu: carpma tespiti + istatistik toplama
+// yarisma dongusu: GERCEK carpma tespiti + hasar + parcalanma + istatistik
 function updateRaceStats(dt) {
   if (!raceMode || !raceBalls.length) return;
   applyRaceGravity(dt);
 
-  let allDone = true;
-  const stats = [];
+  const objDef = OBJS.find(o => o.id === selectedObj);
+  let anyPending = false;
+  let hpChanged = false;
+
   for (const r of raceBalls) {
-    if (r.type !== "ball") continue;
-    // mesh senkron
+    if (r.type === "target") {
+      // cani biten cisimleri parcala
+      if (!r.crushed && r.hp <= 0) {
+        r.crushed = true;
+        spawnDebris(r.mesh);                      // esya ozel enkaz
+        sfxCrush(selectedObj);                    // esya ozel parcalanma sesi
+        if (selectedObj === "safe") sfxCoins();
+        scene.remove(r.mesh); world.removeBody(r.body);
+        hpChanged = true;
+      }
+      continue;
+    }
+    // gulle mesh senkron
     r.mesh.position.copy(r.body.position);
     r.mesh.quaternion.copy(r.body.quaternion);
-    if (r.hitTime === null) {
-      // zemin/cisme carpma tespiti
-      const y = r.body.position.y - r.body.shapes[0].radius;
-      if (y <= .13 || r.body.velocity.norm() < .4) {
-        // once hizi kaydet: v = sqrt(2*g*h)
-        const g = r.planet.g * G_BOOST;
-        const h = r.startY - r.body.position.y;
-        r.impactSpeed = Math.sqrt(2 * g * Math.max(.1, h));
+
+    if (r.hitTime !== null) continue;             // zaten carpti
+
+    if (r.body.position.y > r.startY + 1.5) {     // henuz baslamadi (yukari firladiysa guvenlik)
+      anyPending = true; continue;
+    }
+    // GERCEK carpma: gulle merkezi cismin ust yuzeyine degince
+    const ballR = r.body.shapes[0].radius;
+    const targets = raceBalls.filter(t => t.type === "target" && !t.crushed && t.lane === r.lane);
+    const tgt = targets[0];
+    if (tgt) {
+      const tTop = tgt.body.position.y + tgt.halfH;    // cisim ust yuzeyi
+      const speed = r.body.velocity.norm();
+      if (r.body.position.y - ballR <= tTop && speed > 1.2) {
+        // CARPTI! hiz fizikten, sure kronometreden
+        r.impactSpeed = speed;
         r.hitTime = performance.now() - raceStart;
-      } else { allDone = false; }
+        // hasar: kinetik enerji ile ayni formul (sayfa 1 ile uyumlu)
+        const energy = 0.5 * (BALLS.find(b => b.id === selectedBall).kg) * speed * speed;
+        const dmg = Math.max(3, energy * 0.06);
+        tgt.hp = Math.max(0, tgt.hp - dmg);
+        laneHP[r.lane].hp = tgt.hp;
+        hpChanged = true;
+        sfxImpact(BALLS.find(b => b.id === selectedBall).kg, speed, selectedObj);
+      } else { anyPending = true; }
+    } else {
+      // cisim yok (ezildi) — zemin seviyesini bekle
+      if (r.body.position.y - ballR <= .13 || r.body.velocity.norm() < .4) {
+        r.impactSpeed = r.body.velocity.norm();
+        r.hitTime = performance.now() - raceStart;
+      } else anyPending = true;
     }
   }
-  // etiketler gulleyle hareket etsin (ust kisminda dursun)
   raceArrows.forEach(a => { if (a.parent) a.visible = !raceDone; });
 
-  if (!allDone || raceDone) return;
+  // can barlarini ve istatistikleri guncelle (her zaman ustte)
+  if (hpChanged || !raceDone) renderRaceStats();
+
+  // tum gulleler carpti mi?
+  if (anyPending) return;
+  if (raceDone) return;
   raceDone = true;
-  // istatistikleri hazirla
-  const rows = raceBalls.filter(r => r.type === "ball")
-    .sort((a, b) => a.hitTime - b.hitTime);
-  let fastest = rows[0];
+  renderRaceStats();   // final tablo
+}
+
+// ust istatistik paneli: gezegen, sure, hiz, can
+function renderRaceStats() {
   const el = document.getElementById("raceStats");
-  el.innerHTML = rows.map((r, idx) => {
-    const win = idx === 0 ? " win" : "";
-    return '<div class="raceChip' + win + '">' + r.planet.sym + " " + r.planet.name +
-      " <b>" + (r.hitTime / 1000).toFixed(2) + " sn</b> • " +
-      r.impactSpeed.toFixed(1) + " m/s</div>";
+  const rows = PLANETS.map((p, i) => {
+    const ball = raceBalls.find(r => r.type === "ball" && r.lane === i);
+    const hp = laneHP[i] || { hp:0, maxHp:1 };
+    const pct = Math.max(0, Math.round(hp.hp / hp.maxHp * 100));
+    const time = ball && ball.hitTime !== null ? (ball.hitTime/1000).toFixed(2) + " sn" : "…";
+    const spd  = ball && ball.hitTime !== null ? ball.impactSpeed.toFixed(1) + " m/s" : "…";
+    const dead = pct <= 0 ? " opacity:.45;" : "";
+    return '<div class="raceChip" style="' + dead + 'width:104px;text-align:center;">' +
+      p.sym + "<br><b>" + p.name + "</b><br>" + time + " • " + spd +
+      '<div style="height:5px;background:rgba(255,255,255,.15);border-radius:3px;margin-top:3px;overflow:hidden;">' +
+      '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#7fe8a8,#2eaa5e);"></div></div>' +
+      '<span style="font-size:9px;color:#9fb2c8;">CAN %' + pct + "</span></div>";
   }).join("");
-  sfxImpact(100, fastest.impactSpeed, selectedObj);
-  // en hizli gezegen banneri
-  showBanner("🏆 " + fastest.planet.name.toUpperCase() + " KAZANDI! 🏆");
+  el.innerHTML = rows;
 }
 
 /* ================= BASLAT ================= */
