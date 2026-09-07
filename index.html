@@ -662,6 +662,24 @@ function nb(ctx, dur) {
   for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   return buf;
 }
+// ana ses cikisi: compressor ile kisilmaya karsi korur, guvenli yukseltir
+let masterOut = null;
+function out(ctx) {
+  if (!masterOut) {
+    masterOut = ctx.createDynamicsCompressor();
+    masterOut.threshold.value = -14;
+    masterOut.knee.value = 24;
+    masterOut.ratio.value = 8;
+    masterOut.attack.value = 0.003;
+    masterOut.release.value = 0.25;
+    const mg = ctx.createGain();
+    mg.gain.value = 1.8;              // genel ses gucu
+    masterOut.connect(mg); mg.connect(ctx.destination);
+  }
+  return masterOut;
+}
+// yercekimi orani: dunya=1, merkur~0.38, jupiter~2.53
+function gravRatio() { return planetG(currentPlanet) / (9.81 * G_BOOST); }
 // filtrelenmis gurultu patlamasi
 function noiseFx(ctx, dur, type, f0, f1, vol, decay) {
   const src = ctx.createBufferSource();
@@ -673,7 +691,7 @@ function noiseFx(ctx, dur, type, f0, f1, vol, decay) {
   const g = ctx.createGain();
   g.gain.setValueAtTime(vol, ctx.currentTime);
   g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + decay);
-  src.connect(flt); flt.connect(g); g.connect(ctx.destination);
+  src.connect(flt); flt.connect(g); g.connect(out(ctx));
   src.start();
 }
 // basit ton (frekans kaymasi ile)
@@ -685,7 +703,7 @@ function toneFx(ctx, type, f0, f1, dur, vol) {
   const g = ctx.createGain();
   g.gain.setValueAtTime(vol, ctx.currentTime);
   g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
-  o.connect(g); g.connect(ctx.destination);
+  o.connect(g); g.connect(out(ctx));
   o.start(); o.stop(ctx.currentTime + dur + 0.05);
 }
 // metalik parciklar (armonik olmayan frekanslar = metal sesi)
@@ -696,28 +714,34 @@ function metalFx(ctx, base, n, vol, dur) {
   }
 }
 
-// 1) GULLE DUSUSU: yukselen islama / ruzgar sesi
+// 1) GULLE DUSUSU: yercekimine gore hiz/pes-tiz ayarli islama
+//    gravRatio: merkur~0.38 (uzun+pes), dunya=1 (normal), jupiter~2.5 (kisa+tiz+yuksek)
 function sfxWhoosh() {
   const ctx = getAudio(); if (!ctx || !soundOn) return;
-  const dur = 0.9;
+  const gr = gravRatio();                       // 0.38 .. 2.53
+  const dur = Math.max(0.32, 0.95 / Math.sqrt(gr));   // merkurde uzun, jupiterde cok kisa
+  const fLo = 220 * Math.pow(gr, 0.35);         // merkurde pes, jupiterde tiz
+  const fHi = 1600 * Math.pow(gr, 0.55);
+  const vol = 0.14 * Math.pow(gr, 0.6);         // jupiterde belirgin yuksek
   const src = ctx.createBufferSource();
-  src.buffer = nb(ctx, dur);
+  src.buffer = nb(ctx, dur + 0.1);
   const bp = ctx.createBiquadFilter();
-  bp.type = "bandpass"; bp.Q.value = 6;
-  bp.frequency.setValueAtTime(300, ctx.currentTime);
-  bp.frequency.exponentialRampToValueAtTime(2000, ctx.currentTime + dur);
+  bp.type = "bandpass"; bp.Q.value = 5;
+  bp.frequency.setValueAtTime(fLo, ctx.currentTime);
+  bp.frequency.exponentialRampToValueAtTime(fHi, ctx.currentTime + dur);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, ctx.currentTime);
-  g.gain.linearRampToValueAtTime(0.16, ctx.currentTime + dur * 0.55);
+  g.gain.linearRampToValueAtTime(vol, ctx.currentTime + dur * 0.5);
   g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
-  src.connect(bp); bp.connect(g); g.connect(ctx.destination);
+  src.connect(bp); bp.connect(g); g.connect(out(ctx));
   src.start();
 }
 
 // 2) CARPMA: agirliga + hiza + esya turune gore ses
 function sfxImpact(kg, speed, objId) {
   const ctx = getAudio(); if (!ctx || !soundOn) return;
-  const v = Math.min(0.55, 0.1 + kg / 900 + speed / 80);
+  const gr = gravRatio();   // merkur~0.38, dunya=1, jupiter~2.5
+  const v = Math.min(0.65, (0.1 + kg / 900 + speed / 80) * (0.7 + gr * 0.3));
   toneFx(ctx, "sine", 85 + Math.min(100, kg / 5), 30, 0.3, v);  // tok govde darbesi
   if (objId === "car") {              // metal gurultusu
     noiseFx(ctx, 0.25, "bandpass", 1600, 900, v * 0.8, 0.25);
@@ -736,24 +760,45 @@ function sfxImpact(kg, speed, objId) {
 // 3) PARCALANMA / EZILME sesi (esya turune gore)
 function sfxCrush(objId) {
   const ctx = getAudio(); if (!ctx || !soundOn) return;
-  if (objId === "car") {              // dev metal ezilme
-    noiseFx(ctx, 0.9, "lowpass", 900, 200, 0.5, 0.85);
-    metalFx(ctx, 300, 8, 0.4, 0.8);
-    toneFx(ctx, "sawtooth", 140, 35, 0.7, 0.35);
-  } else if (objId === "tv") {        // cam patlamasi + elektronik cirt
-    for (let i = 0; i < 5; i++) setTimeout(() => {
-      if (soundOn) noiseFx(ctx, 0.14, "highpass", 3200, 2400, 0.35, 0.13);
-    }, i * 60);
-    toneFx(ctx, "sawtooth", 2000, 120, 0.35, 0.22);
-    noiseFx(ctx, 0.5, "lowpass", 600, 150, 0.4, 0.5);
-  } else if (objId === "ballon") {    // POP!
-    toneFx(ctx, "square", 900, 60, 0.07, 0.6);
-    noiseFx(ctx, 0.09, "highpass", 1500, 900, 0.55, 0.09);
-    toneFx(ctx, "sine", 70, 40, 0.25, 0.3);
-  } else {                            // kasa: dev gong + enkaz
-    metalFx(ctx, 160, 6, 0.6, 1.1);
-    noiseFx(ctx, 0.8, "lowpass", 500, 120, 0.55, 0.8);
-    toneFx(ctx, "sine", 100, 28, 0.9, 0.5);
+  if (objId === "car") {
+    // dev metal ezilme: sub-bass patlama + gicirti + parca saglamasi
+    toneFx(ctx, "sine", 90, 24, 1.0, 0.9);                    // sub-bass govde
+    noiseFx(ctx, 1.2, "lowpass", 1200, 180, 0.85, 1.15);      // ana ezilme gurultusu
+    metalFx(ctx, 320, 9, 0.55, 0.9);                          // metalik parciklar
+    toneFx(ctx, "sawtooth", 180, 40, 0.8, 0.5);               // yirtilma
+    setTimeout(() => { if (soundOn) {
+      noiseFx(ctx, 0.3, "bandpass", 800, 400, 0.5, 0.3);
+      metalFx(ctx, 500, 5, 0.4, 0.4);
+    } }, 260);
+    setTimeout(() => { if (soundOn) noiseFx(ctx, 0.25, "lowpass", 500, 200, 0.35, 0.25); }, 520);
+  } else if (objId === "tv") {
+    // cam patlamasi: keskin tus + ardisik kirilma + elektronik cirt
+    toneFx(ctx, "sine", 110, 30, 0.7, 0.8);
+    noiseFx(ctx, 0.5, "highpass", 3500, 2500, 0.75, 0.45);
+    for (let i = 0; i < 8; i++) setTimeout(() => {
+      if (soundOn) noiseFx(ctx, 0.12, "highpass", 3800, 3000, 0.42, 0.11);
+    }, 40 + i * 55);
+    toneFx(ctx, "sawtooth", 2400, 140, 0.4, 0.35);
+    noiseFx(ctx, 0.7, "lowpass", 700, 160, 0.55, 0.65);
+  } else if (objId === "ballon") {
+    // POP!: ultra keskin patlama + hava kacisi + lastik sarsinti
+    toneFx(ctx, "square", 1100, 50, 0.09, 1.0);
+    noiseFx(ctx, 0.12, "highpass", 1800, 1100, 0.9, 0.12);
+    toneFx(ctx, "sine", 85, 38, 0.5, 0.8);
+    setTimeout(() => { if (soundOn) {
+      noiseFx(ctx, 0.3, "lowpass", 600, 200, 0.4, 0.28);
+      toneFx(ctx, "sine", 60, 32, 0.35, 0.35);
+    } }, 90);
+  } else {
+    // kasa: dev metal gong + kilit kirilma + enkaz yikimi
+    toneFx(ctx, "sine", 70, 22, 1.3, 1.0);
+    metalFx(ctx, 150, 7, 0.85, 1.3);
+    noiseFx(ctx, 1.1, "lowpass", 550, 110, 0.8, 1.0);
+    setTimeout(() => { if (soundOn) {
+      metalFx(ctx, 900, 4, 0.5, 0.25);
+      noiseFx(ctx, 0.2, "bandpass", 1500, 900, 0.45, 0.18);
+    } }, 140);
+    setTimeout(() => { if (soundOn) noiseFx(ctx, 0.35, "lowpass", 400, 150, 0.4, 0.3); }, 480);
   }
 }
 
